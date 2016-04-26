@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"golang.org/x/exp/inotify"
+	"github.com/fsnotify/fsnotify"
 )
 
 var delay = flag.Int("d", 500, "start delay in milliseconds")
@@ -33,13 +33,16 @@ func main() {
 	var lastEvent time.Time
 	for {
 		select {
-		case ev := <-watcher.Event:
+		case event := <-watcher.Events:
+			if event.Op&fsnotify.Write != fsnotify.Write {
+				continue
+			}
 			if time.Now().Before(lastEvent.Add(time.Duration(*sleep) * time.Millisecond)) {
 				continue
 			}
-			println(time.Now(), ev.Name, "changed")
+			println(time.Now(), event.Name, "changed")
 			startTimer.Reset(time.Duration(*delay) * time.Millisecond)
-		case err := <-watcher.Error:
+		case err := <-watcher.Errors:
 			log.Println("error:", err)
 		case <-startTimer.C:
 			killProcess(cmd)
@@ -49,18 +52,18 @@ func main() {
 	}
 }
 
-func newWatcher() (*inotify.Watcher, error) {
-	watcher, err := inotify.NewWatcher()
+func newWatcher() (*fsnotify.Watcher, error) {
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
-	watcher.AddWatch(".", inotify.IN_CLOSE_WRITE)
+	watcher.Add(".")
 	i := 0
 	fn := func(path string, f os.FileInfo, err error) error {
 		if f != nil && f.IsDir() {
 			if !strings.HasPrefix(path, ".") && !strings.Contains(path, "/.") {
 				i++
-				return watcher.AddWatch(path, inotify.IN_MODIFY)
+				return watcher.Add(path)
 			}
 		}
 		return nil
