@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/fsnotify/fsnotify"
+	"gopkg.in/fsnotify.v1"
 )
 
 var delay = flag.Int("d", 500, "start delay in milliseconds")
