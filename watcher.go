@@ -15,8 +15,9 @@ import (
 	"gopkg.in/fsnotify.v1"
 )
 
-var delay = flag.Int("d", 500, "start delay in milliseconds")
-var sleep = flag.Int("s", 1000, "sleep in milliseconds")
+var delay = flag.Int("d", 500, "execution delay in milliseconds")
+var sleep = flag.Int("w", 1000, "wait after execution in milliseconds")
+var execDir = flag.Bool("c", false, "execute in changed directory")
 
 func main() {
 	flag.Parse()
@@ -31,6 +32,7 @@ func main() {
 	var cmd *exec.Cmd
 	startTimer := time.NewTimer(0)
 	var lastEvent time.Time
+	var lastFileName string
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -40,13 +42,22 @@ func main() {
 			if time.Now().Before(lastEvent.Add(time.Duration(*sleep) * time.Millisecond)) {
 				continue
 			}
+			lastFileName = event.Name
 			println(time.Now(), event.Name, "changed")
 			startTimer.Reset(time.Duration(*delay) * time.Millisecond)
 		case err := <-watcher.Errors:
 			log.Println("error:", err)
 		case <-startTimer.C:
 			killProcess(cmd)
-			cmd = startCommand(flag.Args()...)
+			wd, err := os.Getwd()
+			if err != nil {
+				panic(err)
+			}
+			cwd := filepath.Join(wd, lastFileName)
+			if lastFileName != "" {
+				cwd = filepath.Dir(cwd)
+			}
+			cmd = startCommand(cwd, flag.Args()...)
 			lastEvent = time.Now()
 		}
 	}
@@ -76,8 +87,11 @@ func newWatcher() (*fsnotify.Watcher, error) {
 	return watcher, nil
 }
 
-func startCommand(args ...string) *exec.Cmd {
+func startCommand(cwd string, args ...string) *exec.Cmd {
 	cmd := exec.Command("setsid", args...)
+	if *execDir {
+		cmd.Dir = cwd
+	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err := cmd.Start()
